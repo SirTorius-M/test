@@ -1,5 +1,5 @@
 #!/bin/sh
-
+echo "test 2.3"
 # Define URLs and target paths
 URL_BUSYBOX="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/busybox"
 URL_MAGISK_BOOT="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/magiskboot"
@@ -7,12 +7,12 @@ URL_SHELLCODE="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/BootS
 URL_KP="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/kernelpatcher"
 URL_UEFI="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/nabu_UEFI.fd"
 
-TARGET_DIR="/dev/tmp/uefi-install"
-TARGET_BUSYBOX="$(pwd)/busybox"
-TARGET_MAGISK_BOOT="$(pwd)/magiskboot"
-TARGET_SHELLCODE="$(pwd)/BootShim.Dualboot.bin"
-TARGET_KP="$(pwd)/kernelpatcher"
-TARGET_UEFI="$(pwd)/nabu_UEFI.fd"
+TARGET_DIR="$(pwd)"
+TARGET_BUSYBOX="$TARGET_DIR/busybox"
+TARGET_MAGISK_BOOT="$TARGET_DIR/magiskboot"
+TARGET_SHELLCODE="$TARGET_DIR/BootShim.Dualboot.bin"
+TARGET_KP="$TARGET_DIR/kernelpatcher"
+TARGET_UEFI="$TARGET_DIR/nabu_UEFI.fd"
 TARGET_BOOT="/dev/block/platform/soc/1d84000.ufshc/by-name/boot$(getprop ro.boot.slot_suffix)"
 
 log() {
@@ -39,52 +39,53 @@ download_and_set_permissions() {
 }
 
 mkdir -p "$TARGET_DIR"
-cd "$TARGET_DIR"
 
-# Download busybox first
+# Download necessary files
 download_and_set_permissions "$URL_BUSYBOX" "$TARGET_BUSYBOX"
-
-# Download remaining files
 download_and_set_permissions "$URL_MAGISK_BOOT" "$TARGET_MAGISK_BOOT"
 download_and_set_permissions "$URL_SHELLCODE" "$TARGET_SHELLCODE"
 download_and_set_permissions "$URL_KP" "$TARGET_KP"
 download_and_set_permissions "$URL_UEFI" "$TARGET_UEFI"
 
 log "[INFO] Backing up boot.img..."
-$TARGET_BUSYBOX dd if="$TARGET_BOOT" of="$(pwd)/boot.img" bs=8M || { log "[ERROR] Failed to dump boot image!"; exit 1; }
-$TARGET_BUSYBOX cp -f "$(pwd)/boot.img" "/sdcard/boot_backup$(getprop ro.boot.slot_suffix).img"
+$TARGET_BUSYBOX dd if="$TARGET_BOOT" of="$TARGET_DIR/boot.img" bs=8M || { log "[ERROR] Failed to dump boot image!"; exit 1; }
+$TARGET_BUSYBOX cp -f "$TARGET_DIR/boot.img" "/sdcard/boot_backup$(getprop ro.boot.slot_suffix).img"
 log "[SUCCESS] Boot image backup completed."
 
 log "[INFO] Unpacking boot.img..."
-$TARGET_MAGISK_BOOT unpack -h "$(pwd)/boot.img" || { log "[ERROR] Failed to unpack image!"; exit 1; }
+$TARGET_MAGISK_BOOT unpack -h "$TARGET_DIR/boot.img" || { log "[ERROR] Failed to unpack image!"; exit 1; }
 log "[SUCCESS] Unpacking completed."
 
 log "[INFO] Checking for existing UEFI installation..."
-if [ ! -f "$(pwd)/kernel" ]; then
-    log "[ERROR] Kernel file not found after unpacking! Exiting..."
-    exit 1
+if [ "$($TARGET_BUSYBOX dd if="$TARGET_DIR/kernel" bs=1 count=8 skip=64 status=none)" = "EDK2-MSM" ]; then
+    log "[INFO] Patched boot.img with UEFI detected, updating..."
+    KERNEL_SIZE=$($TARGET_BUSYBOX dd if="$TARGET_DIR/kernel" bs=1 count=4 skip=48 status=none | od -An -t u)
+    log "[INFO] Extracting original kernel size: $KERNEL_SIZE bytes"
+    $TARGET_BUSYBOX dd if="$TARGET_DIR/kernel" of="$TARGET_DIR/kernel_orig" bs=1 count=$KERNEL_SIZE status=none
+else
+    log "[INFO] Stock boot.img detected, installing..."
+    mv "$TARGET_DIR/kernel" "$TARGET_DIR/kernel_orig"
 fi
 
-$TARGET_BUSYBOX dd if="$(pwd)/kernel" bs=1 count=8 skip=64 status=none | grep -q "EDK2-MSM" && log "[INFO] UEFI detected, updating..." || log "[INFO] Stock boot.img detected, installing..."
-
 log "[INFO] Patching kernel..."
-$TARGET_BUSYBOX stat -c "%s" "$TARGET_UEFI" > "$(pwd)/payloadsize"
-$TARGET_KP "$(pwd)/kernel" "$TARGET_SHELLCODE" $(cat "$(pwd)/payloadsize") || { log "[ERROR] Kernel patching failed!"; exit 1; }
+PAYLOAD_SIZE=$($TARGET_BUSYBOX stat -c "%s" "$TARGET_UEFI")
+$TARGET_KP "$TARGET_DIR/kernel_orig" "$TARGET_SHELLCODE" $PAYLOAD_SIZE || { log "[ERROR] Kernel patching failed!"; exit 1; }
 log "[SUCCESS] Kernel patching completed."
 
 log "[INFO] Merging patched kernel with UEFI..."
-$TARGET_BUSYBOX cat "$(pwd)/kernel" "$TARGET_UEFI" > "$(pwd)/new_kernel"
-$TARGET_BUSYBOX mv -f "$(pwd)/new_kernel" "$(pwd)/kernel"
+$TARGET_BUSYBOX cat "$TARGET_DIR/kernel_orig" "$TARGET_UEFI" > "$TARGET_DIR/kernel"
+rm -f "$TARGET_DIR/kernel_orig"
 log "[SUCCESS] Kernel merge completed."
 
 log "[INFO] Repacking boot.img..."
-$TARGET_MAGISK_BOOT repack "$(pwd)/boot.img" || { log "[ERROR] Failed to repack boot image!"; exit 1; }
+$TARGET_MAGISK_BOOT repack "$TARGET_DIR/boot.img" || { log "[ERROR] Failed to repack boot image!"; exit 1; }
 $TARGET_MAGISK_BOOT cleanup
 log "[SUCCESS] Boot.img repacking completed."
 
 log "[INFO] Flashing new patched boot image..."
-$TARGET_BUSYBOX dd if="$(pwd)/new-boot.img" of="$TARGET_BOOT" bs=8M || { log "[ERROR] Failed to flash patched boot image!"; exit 1; }
-$TARGET_BUSYBOX cp -f "$(pwd)/new-boot.img" "/sdcard/patched_boot.img"
+$TARGET_BUSYBOX blockdev --setrw "$TARGET_BOOT"
+$TARGET_BUSYBOX cat "$TARGET_DIR/new-boot.img" /dev/zero > "$TARGET_BOOT" 2>/dev/null || { log "[ERROR] Failed to flash patched boot image!"; exit 1; }
+$TARGET_BUSYBOX cp -f "$TARGET_DIR/new-boot.img" "/sdcard/patched_boot.img"
 log "[SUCCESS] Patched boot backup completed."
 
 log "[INFO] Cleaning up temporary files..."
