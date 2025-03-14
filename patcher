@@ -1,4 +1,69 @@
-#!/system/bin/sh
+#!/bin/sh
+
+# Define URLs and target paths
+URL_BUSYBOX="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/busybox"
+URL_MAGISK_BOOT="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/magiskboot"
+URL_SHELLCODE="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/BootShim.Dualboot.bin"
+URL_KP="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/kernelpatcher"
+URL_UEFI="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/nabu_UEFI.fd"
+
+TARGET_BUSYBOX="$(pwd)/busybox"
+TARGET_MAGISK_BOOT="$(pwd)/magiskboot"
+TARGET_SHELLCODE="$(pwd)/BootShim.Dualboot.bin"
+TARGET_KP="$(pwd)/kernelpatcher"
+TARGET_UEFI="$(pwd)/nabu_UEFI.fd"
+
+
+# Check the device codename using getprop
+DEVICE_CODENAME=$(getprop ro.product.device)
+
+if [ "$DEVICE_CODENAME" = "nabu" ]; then
+    echo ""
+	  echo ""
+	  echo ""
+    echo "EDK2-UEFI PATCHER for Xiaomi Pad 5 ($DEVICE_CODENAME) FOR LINUX BOOT MENU"
+    echo ""
+    echo ""
+else
+    echo ""
+    echo "This device is not supported"
+    echo "your Device - $DEVICE_CODENAME"
+    echo ""
+    exit 1
+fi
+
+echo ""
+# Function to download and set permissions
+download_and_set_permissions() {
+    local url=$1
+    local dest_file=$2
+    echo "Downloading $(basename "$url")..."
+    curl -s -L -o "$dest_file" "$url"
+
+    if [ $? -ne 0 ]; then
+        echo "Failed to download $(basename "$url"). Exiting."
+        echo ""
+        echo "Please re-boot/Restart your device and Re-run this Code."
+        exit 1
+    fi
+
+    chmod 777 "$dest_file"
+    echo "Permissions set for $(basename "$dest_file")"
+}
+
+# Download and set permissions for binaries
+download_and_set_permissions "$URL_BUSYBOX" "$TARGET_BUSYBOX"
+
+# Delete all files in $(pwd) except busybox
+$(pwd)/busybox find $(pwd) -mindepth 1 ! -name 'busybox' -exec $(pwd)/busybox rm -rf {} +
+
+download_and_set_permissions "$URL_MAGISK_BOOT" "$TARGET_MAGISK_BOOT"
+download_and_set_permissions "$URL_SHELLCODE" "$TARGET_SHELLCODE"
+download_and_set_permissions "$URL_KP" "$TARGET_KP"
+download_and_set_permissions "$URL_UEFI" "$TARGET_UEFI"
+
+echo "TILL NOW AS OF NOW"
+exit 0
 
 # Set working directory
 mkdir -p /sdcard/nabu
