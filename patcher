@@ -19,10 +19,8 @@ DEVICE_CODENAME=$(getprop ro.product.device)
 
 if [ "$DEVICE_CODENAME" = "nabu" ]; then
     echo ""
-	  echo ""
-	  echo ""
-    echo "EDK2-UEFI PATCHER for Xiaomi Pad 5 ($DEVICE_CODENAME) FOR LINUX BOOT MENU"
     echo ""
+    echo "EDK2-UEFI PATCHER for Xiaomi Pad 5 ($DEVICE_CODENAME) FOR LINUX BOOT MENU"
     echo ""
 else
     echo ""
@@ -32,7 +30,6 @@ else
     exit 1
 fi
 
-echo ""
 # Function to download and set permissions
 download_and_set_permissions() {
     local url=$1
@@ -63,39 +60,41 @@ download_and_set_permissions "$URL_KP" "$TARGET_KP"
 download_and_set_permissions "$URL_UEFI" "$TARGET_UEFI"
 
 echo ""
+echo ""
 echo "Backing up boot.img to /sdcard..."
-$(pwd)/busybox dd if=/dev/block/platform/soc/1d84000.ufshc/by-name/boot$(getprop ro.boot.slot_suffix) of=boot.img bs=64M || { echo "Failed to dump boot image!"; exit 1; }
+$(pwd)/busybox dd if=/dev/block/platform/soc/1d84000.ufshc/by-name/boot$(getprop ro.boot.slot_suffix) of=boot.img bs=8M || { echo "Failed to dump boot image!"; exit 1; }
 $(pwd)/busybox cp -f boot.img /sdcard/boot_backup$(getprop ro.boot.slot_suffix).img
 echo "Backup completed"
-
+echo ""
 echo "unpacking boot.img..."
 $(pwd)/magiskboot unpack -h boot.img || { echo "Failed to unpack image!"; exit 1; }
 echo "unpacking completed"
-
+echo ""
 echo "Check if UEFI already installed..."
 $(pwd)/busybox dd if=kernel bs=1 count=8 skip=64 status=none | grep "EDK2-MSM" && echo "UEFI detected, updating..." || echo "Stock boot.img detected, installing..."
-
+echo ""
 echo "Patch the kernel"
 $(pwd)/busybox stat -c "%s" nabu_UEFI.fd > payloadsize
 $(pwd)/kernelpatcher kernel BootShim.Dualboot.bin $(cat payloadsize) || { echo "Failed to patch kernel!"; exit 1; }
 echo "Patching kernel completed"
-
+echo ""
 echo "Merging patched kernel with UEFI"
 $(pwd)/busybox cat kernel nabu_UEFI.fd > new_kernel
 $(pwd)/busybox rm -f kernel
 $(pwd)/busybox mv new_kernel kernel
-
+echo ""
 echo "repacking boot.img..."
 $(pwd)/magiskboot repack boot.img || { echo "Failed to repack image!"; exit 1; }
 $(pwd)/magiskboot cleanup
 echo "repacking boot.img completed"
-
+echo ""
 echo "Flashing new patched boot image"
-$(pwd)/busybox blockdev --setrw /dev/block/bootdevice/by-name/boot$(getprop ro.boot.slot_suffix)
-$(pwd)/busybox cat new-boot.img /dev/zero > /dev/block/bootdevice/by-name/boot$(getprop ro.boot.slot_suffix) 2>/dev/null || true
-$(pwd)/busybox rm -f new-boot.img
-
+$(pwd)/busybox dd if=new-boot.img of=/dev/block/platform/soc/1d84000.ufshc/by-name/boot$(getprop ro.boot.slot_suffix) bs=8M || { echo "Failed to flash patched boot image!"; exit 1; }
+$(pwd)/busybox cp -f new-boot.img /sdcard/patched_boot.img
+echo "patched boot Backup completed"
+echo ""
 # Cleanup
-rm -rf /dev/tmp
-
+cd
+$(pwd)/busybox rm -rf /dev/tmp
+echo ""
 echo "Done installing edk2-msm UEFI!"
