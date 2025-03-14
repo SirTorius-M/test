@@ -95,6 +95,6 @@ echo "patched boot Backup completed"
 echo ""
 # Cleanup
 cd
-$(pwd)/busybox rm -rf /dev/tmp
+rm -rf /dev/tmp
 echo ""
 echo "Done installing edk2-msm UEFI!"
