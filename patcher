@@ -18,7 +18,7 @@ DEVICE_CODENAME=$(getprop ro.product.device)
 
 if [ "$DEVICE_CODENAME" = "nabu" ]; then
     echo ""
-    echo "test-Version-1.9"
+    echo "test-Version-2.0"
     echo "EDK2-UEFI PATCHER for Xiaomi Pad 5 ($DEVICE_CODENAME) FOR LINUX BOOT MENU"
     echo ""
 else
@@ -102,3 +102,12 @@ cd
 rm -rf /dev/tmp
 echo ""
 echo "Done installing edk2-msm UEFI!"
+echo "Do you want to reboot? (y/n)"
+read -r answer
+if [ "$answer" = "y" ]; then
+    echo "Rebooting now..."
+    reboot
+else
+    echo "Exiting..."
+    exit 0
+fi
