@@ -1,6 +1,7 @@
 #!/bin/sh
-##MAGISK
-su -c "cd / && mkdir -p /dev/tmp && chmod 777 /dev/tmp && cd /dev/tmp && curl -sSL https://raw.githubusercontent.com/SirTorius-M/test/main/patcher -o /dev/tmp/patcher && chmod 777 /dev/tmp/patcher && su -c "/dev/tmp/patcher""
+
+#su -c "cd / && mkdir -p /dev/tmp && chmod 777 /dev/tmp && cd /dev/tmp && curl -sSL https://raw.githubusercontent.com/SirTorius-M/test/main/patcher -o /dev/tmp/patcher && chmod 777 /dev/tmp/patcher && su -c "/dev/tmp/patcher""
+
 # Define URLs and target paths
 URL_BUSYBOX="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/busybox"
 URL_MAGISK_BOOT="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/magiskboot"
