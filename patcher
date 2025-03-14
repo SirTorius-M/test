@@ -13,13 +13,12 @@ TARGET_SHELLCODE="$(pwd)/BootShim.Dualboot.bin"
 TARGET_KP="$(pwd)/kernelpatcher"
 TARGET_UEFI="$(pwd)/nabu_UEFI.fd"
 
-
 # Check the device codename using getprop
 DEVICE_CODENAME=$(getprop ro.product.device)
 
 if [ "$DEVICE_CODENAME" = "nabu" ]; then
     echo ""
-    echo "test-Version-1.7"
+    echo "test-Version-1.9"
     echo "EDK2-UEFI PATCHER for Xiaomi Pad 5 ($DEVICE_CODENAME) FOR LINUX BOOT MENU"
     echo ""
 else
@@ -36,14 +35,12 @@ download_and_set_permissions() {
     local dest_file=$2
     echo "Downloading $(basename "$url")..."
     curl -s -L -o "$dest_file" "$url"
-
     if [ $? -ne 0 ]; then
         echo "Failed to download $(basename "$url"). Exiting."
         echo ""
         echo "Please re-boot/Restart your device and Re-run this Code."
         exit 1
     fi
-
     chmod 777 "$dest_file"
     echo "Permissions set for $(basename "$dest_file")"
 }
@@ -65,6 +62,7 @@ echo "Backing up boot.img to /sdcard..."
 $(pwd)/busybox dd if=/dev/block/platform/soc/1d84000.ufshc/by-name/boot$(getprop ro.boot.slot_suffix) of=boot.img bs=8M || { echo "Failed to dump boot image!"; exit 1; }
 $(pwd)/busybox cp -f boot.img /sdcard/boot_backup$(getprop ro.boot.slot_suffix).img
 echo "Backup completed"
+sleep 2
 echo ""
 echo "unpacking boot.img..."
 $(pwd)/magiskboot unpack -h boot.img || { echo "Failed to unpack image!"; exit 1; }
