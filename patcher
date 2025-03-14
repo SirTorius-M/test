@@ -16,6 +16,7 @@ TARGET_UEFI="$TARGET_DIR/nabu_UEFI.fd"
 TARGET_BOOT="/dev/block/platform/soc/1d84000.ufshc/by-name/boot$(getprop ro.boot.slot_suffix)"
 
 log() {
+    echo ""
     echo "[$(date +"%H:%M:%S")] $1"
 }
 
@@ -59,9 +60,13 @@ log "[SUCCESS] Unpacking completed."
 log "[INFO] Checking for existing UEFI installation..."
 if [ "$($TARGET_BUSYBOX dd if="$TARGET_DIR/kernel" bs=1 count=8 skip=64 status=none)" = "EDK2-MSM" ]; then
     log "[INFO] Patched boot.img with UEFI detected, updating..."
-    KERNEL_SIZE=$($TARGET_BUSYBOX dd if="$TARGET_DIR/kernel" bs=1 count=4 skip=48 status=none | od -An -t u)
+    KERNEL_SIZE=$($TARGET_BUSYBOX dd if="$TARGET_DIR/kernel" bs=1 count=4 skip=48 status=none | od -An -t u | tr -d ' ')
+    if [ -z "$KERNEL_SIZE" ] || [ "$KERNEL_SIZE" -le 0 ]; then
+        log "[ERROR] Failed to extract valid kernel size!"
+        exit 1
+    fi
     log "[INFO] Extracting original kernel size: $KERNEL_SIZE bytes"
-    $TARGET_BUSYBOX dd if="$TARGET_DIR/kernel" of="$TARGET_DIR/kernel_orig" bs=1 count=$KERNEL_SIZE status=none
+    $TARGET_BUSYBOX dd if="$TARGET_DIR/kernel" of="$TARGET_DIR/kernel_orig" bs=1 count=$KERNEL_SIZE status=none || { log "[ERROR] Failed to extract original kernel!"; exit 1; }
 else
     log "[INFO] Stock boot.img detected, installing..."
     mv "$TARGET_DIR/kernel" "$TARGET_DIR/kernel_orig"
