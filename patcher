@@ -16,6 +16,7 @@ TARGET_UEFI="$(pwd)/nabu_UEFI.fd"
 TARGET_BOOT="/dev/block/platform/soc/1d84000.ufshc/by-name/boot$(getprop ro.boot.slot_suffix)"
 
 log() {
+    echo ""
     echo "[$(date +"%H:%M:%S")] $1"
 }
 
