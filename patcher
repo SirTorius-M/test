@@ -1,0 +1,50 @@
+#!/system/bin/sh
+
+# Set working directory
+mkdir -p /sdcard/nabu
+cd /sdcard/nabu
+mkdir -p /dev/tmp/
+cp /sdcard/magiskboot /dev/tmp/
+cp /sdcard/kernelpatcher /dev/tmp/
+chmod 755 /dev/tmp/magiskboot /dev/tmp/kernelpatcher
+
+# Check for necessary files
+ls /sdcard/*_UEFI.fd 2>/dev/null || echo "No edk2-msm UEFI image found!" && exit 1
+ls /sdcard/BootShim.Dualboot.bin 2>/dev/null || echo "No edk2-msm bootshim image found!" && exit 1
+
+# Get current boot slot
+getprop ro.boot.slot_suffix
+
+# Backup original boot image
+dd bs=1048576 if=/dev/block/bootdevice/by-name/boot$(getprop ro.boot.slot_suffix) of=boot.img || echo "Failed to dump image!" && exit 1
+cp -f boot.img /sdcard/boot_backup$(getprop ro.boot.slot_suffix).img
+echo "Backup completed"
+
+# Unpack boot image
+/dev/tmp/magiskboot unpack -h boot.img || echo "Failed to unpack image!" && exit 1
+
+# Check if UEFI is already installed
+dd if=kernel bs=1 count=8 skip=64 status=none | grep "EDK2-MSM" && echo "UEFI detected, updating..." || echo "Stock boot.img detected, installing..."
+
+# Patch the kernel
+stat -c "%s" /sdcard/*_UEFI.fd > payloadsize
+/dev/tmp/kernelpatcher kernel /sdcard/BootShim.Dualboot.bin $(cat payloadsize) || echo "Failed to patch kernel!" && exit 1
+
+# Merge patched kernel with UEFI
+cat kernel /sdcard/*_UEFI.fd > new_kernel
+rm -f kernel
+mv new_kernel kernel
+
+# Repack boot image
+/dev/tmp/magiskboot repack boot.img || echo "Failed to repack image!" && exit 1
+/dev/tmp/magiskboot cleanup
+
+# Flash new boot image
+blockdev --setrw /dev/block/bootdevice/by-name/boot$(getprop ro.boot.slot_suffix)
+cat new-boot.img /dev/zero > /dev/block/bootdevice/by-name/boot$(getprop ro.boot.slot_suffix) 2>/dev/null || true
+rm -f new-boot.img
+
+# Cleanup
+rm -rf /sdcard/nabu
+
+echo "Done installing edk2-msm UEFI!"
