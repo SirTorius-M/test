@@ -19,7 +19,7 @@ DEVICE_CODENAME=$(getprop ro.product.device)
 
 if [ "$DEVICE_CODENAME" = "nabu" ]; then
     echo ""
-    echo ""
+    echo "test-Version-1.7"
     echo "EDK2-UEFI PATCHER for Xiaomi Pad 5 ($DEVICE_CODENAME) FOR LINUX BOOT MENU"
     echo ""
 else
