@@ -1,96 +1,101 @@
 #!/bin/sh
 
 # Define URLs and target paths
-URLS=(
-    "https://raw.githubusercontent.com/SirTorius-M/test/main/bin/busybox busybox"
-    "https://raw.githubusercontent.com/SirTorius-M/test/main/bin/magiskboot magiskboot"
-    "https://raw.githubusercontent.com/SirTorius-M/test/main/bin/BootShim.Dualboot.bin BootShim.Dualboot.bin"
-    "https://raw.githubusercontent.com/SirTorius-M/test/main/bin/kernelpatcher kernelpatcher"
-    "https://raw.githubusercontent.com/SirTorius-M/test/main/bin/nabu_UEFI.fd nabu_UEFI.fd"
-)
+URL_BUSYBOX="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/busybox"
+URL_MAGISK_BOOT="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/magiskboot"
+URL_SHELLCODE="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/BootShim.Dualboot.bin"
+URL_KP="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/kernelpatcher"
+URL_UEFI="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/nabu_UEFI.fd"
 
-TARGET_DIR=$(pwd)
-BOOT_SLOT=$(getprop ro.boot.slot_suffix)
-BOOT_BACKUP_PATH="/sdcard/boot_backup$BOOT_SLOT.img"
+TARGET_BUSYBOX="$(pwd)/busybox"
+TARGET_MAGISK_BOOT="$(pwd)/magiskboot"
+TARGET_SHELLCODE="$(pwd)/BootShim.Dualboot.bin"
+TARGET_KP="$(pwd)/kernelpatcher"
+TARGET_UEFI="$(pwd)/nabu_UEFI.fd"
+
+
+# Check the device codename using getprop
 DEVICE_CODENAME=$(getprop ro.product.device)
 
-log() {
-    echo "[$(date +"%H:%M:%S")] $1"
-}
-
-if [ "$DEVICE_CODENAME" != "nabu" ]; then
-    log "[ERROR] Unsupported device: $DEVICE_CODENAME"
+if [ "$DEVICE_CODENAME" = "nabu" ]; then
+    echo ""
+	  echo ""
+	  echo ""
+    echo "EDK2-UEFI PATCHER for Xiaomi Pad 5 ($DEVICE_CODENAME) FOR LINUX BOOT MENU"
+    echo ""
+    echo ""
+else
+    echo ""
+    echo "This device is not supported"
+    echo "your Device - $DEVICE_CODENAME"
+    echo ""
     exit 1
 fi
 
-log "[INFO] EDK2-UEFI PATCHER for Xiaomi Pad 5 ($DEVICE_CODENAME)"
-
+echo ""
 # Function to download and set permissions
-download_file() {
-    local url=$1 dest_file=$2
-    log "[INFO] Downloading $(basename "$dest_file")..."
-    curl -s -L -o "$dest_file" "$url" || { log "[ERROR] Failed to download $(basename "$dest_file")"; exit 1; }
-    chmod 755 "$dest_file"
-    log "[SUCCESS] $(basename "$dest_file") ready."
+download_and_set_permissions() {
+    local url=$1
+    local dest_file=$2
+    echo "Downloading $(basename "$url")..."
+    curl -s -L -o "$dest_file" "$url"
+
+    if [ $? -ne 0 ]; then
+        echo "Failed to download $(basename "$url"). Exiting."
+        echo ""
+        echo "Please re-boot/Restart your device and Re-run this Code."
+        exit 1
+    fi
+
+    chmod 777 "$dest_file"
+    echo "Permissions set for $(basename "$dest_file")"
 }
 
-# Download all necessary files
-for entry in "${URLS[@]}"; do
-    set -- $entry
-    download_file "$1" "$TARGET_DIR/$2"
-done
+# Download and set permissions for binaries
+download_and_set_permissions "$URL_BUSYBOX" "$TARGET_BUSYBOX"
 
-log "[INFO] Cleaning up workspace..."
-$TARGET_DIR/busybox find $TARGET_DIR -mindepth 1 ! -name 'busybox' -exec $TARGET_DIR/busybox rm -rf {} +
+# Delete all files in $(pwd) except busybox
+$(pwd)/busybox find $(pwd) -mindepth 1 ! -name 'busybox' -exec $(pwd)/busybox rm -rf {} +
 
-# Backup boot image
-log "[INFO] Backing up boot.img to /sdcard..."
-$TARGET_DIR/busybox dd if=/dev/block/platform/soc/1d84000.ufshc/by-name/boot$BOOT_SLOT of=boot.img bs=64M || { log "[ERROR] Failed to dump boot image!"; exit 1; }
-$TARGET_DIR/busybox cp -f boot.img "$BOOT_BACKUP_PATH"
-log "[SUCCESS] Boot image backup completed at $BOOT_BACKUP_PATH."
+download_and_set_permissions "$URL_MAGISK_BOOT" "$TARGET_MAGISK_BOOT"
+download_and_set_permissions "$URL_SHELLCODE" "$TARGET_SHELLCODE"
+download_and_set_permissions "$URL_KP" "$TARGET_KP"
+download_and_set_permissions "$URL_UEFI" "$TARGET_UEFI"
 
-# Unpack boot image
-log "[INFO] Unpacking boot.img..."
-$TARGET_DIR/magiskboot unpack -h boot.img || { log "[ERROR] Failed to unpack image!"; exit 1; }
-log "[SUCCESS] Unpacking completed."
+echo ""
+echo "Backing up boot.img to /sdcard..."
+$(pwd)/busybox dd if=/dev/block/platform/soc/1d84000.ufshc/by-name/boot$(getprop ro.boot.slot_suffix) of=boot.img bs=64M || { echo "Failed to dump boot image!"; exit 1; }
+$(pwd)/busybox cp -f boot.img /sdcard/boot_backup$(getprop ro.boot.slot_suffix).img
+echo "Backup completed"
 
-# Check for UEFI installation
-log "[INFO] Checking for existing UEFI installation..."
-if $TARGET_DIR/busybox dd if=kernel bs=1 count=8 skip=64 status=none | grep -q "EDK2-MSM"; then
-    log "[INFO] UEFI detected in boot.img, updating..."
-else
-    log "[INFO] Stock boot.img detected, installing UEFI..."
-fi
+echo "unpacking boot.img..."
+$(pwd)/magiskboot unpack -h boot.img || { echo "Failed to unpack image!"; exit 1; }
+echo "unpacking completed"
 
-# Patch kernel
-log "[INFO] Patching kernel..."
-$TARGET_DIR/busybox stat -c "%s" $TARGET_DIR/nabu_UEFI.fd > payloadsize
-$TARGET_DIR/kernelpatcher kernel $TARGET_DIR/BootShim.Dualboot.bin $(cat payloadsize) || { log "[ERROR] Kernel patching failed!"; exit 1; }
-log "[SUCCESS] Kernel patching completed."
+echo "Check if UEFI already installed..."
+$(pwd)/busybox dd if=kernel bs=1 count=8 skip=64 status=none | grep "EDK2-MSM" && echo "UEFI detected, updating..." || echo "Stock boot.img detected, installing..."
 
-# Merge patched kernel with UEFI
-log "[INFO] Merging patched kernel with UEFI..."
-$TARGET_DIR/busybox cat kernel $TARGET_DIR/nabu_UEFI.fd > new_kernel
-$TARGET_DIR/busybox rm -f kernel
-$TARGET_DIR/busybox mv new_kernel kernel
-log "[SUCCESS] Kernel merge completed."
+echo "Patch the kernel"
+$(pwd)/busybox stat -c "%s" nabu_UEFI.fd > payloadsize
+$(pwd)/kernelpatcher kernel BootShim.Dualboot.bin $(cat payloadsize) || { echo "Failed to patch kernel!"; exit 1; }
+echo "Patching kernel completed"
 
-# Repack boot.img
-log "[INFO] Repacking boot.img..."
-$TARGET_DIR/magiskboot repack boot.img || { log "[ERROR] Failed to repack boot image!"; exit 1; }
-$TARGET_DIR/magiskboot cleanup
-log "[SUCCESS] Boot.img repacking completed."
+echo "Merging patched kernel with UEFI"
+$(pwd)/busybox cat kernel nabu_UEFI.fd > new_kernel
+$(pwd)/busybox rm -f kernel
+$(pwd)/busybox mv new_kernel kernel
 
-# Flash new patched boot image
-log "[INFO] Flashing new patched boot image..."
-$TARGET_DIR/busybox blockdev --setrw /dev/block/bootdevice/by-name/boot$BOOT_SLOT
-$TARGET_DIR/busybox cat new-boot.img /dev/zero > /dev/block/bootdevice/by-name/boot$BOOT_SLOT 2>/dev/null || true
-$TARGET_DIR/busybox rm -f new-boot.img
-log "[SUCCESS] New boot image flashed."
+echo "repacking boot.img..."
+$(pwd)/magiskboot repack boot.img || { echo "Failed to repack image!"; exit 1; }
+$(pwd)/magiskboot cleanup
+echo "repacking boot.img completed"
+
+echo "Flashing new patched boot image"
+$(pwd)/busybox blockdev --setrw /dev/block/bootdevice/by-name/boot$(getprop ro.boot.slot_suffix)
+$(pwd)/busybox cat new-boot.img /dev/zero > /dev/block/bootdevice/by-name/boot$(getprop ro.boot.slot_suffix) 2>/dev/null || true
+$(pwd)/busybox rm -f new-boot.img
 
 # Cleanup
-log "[INFO] Cleaning up temporary files..."
 rm -rf /dev/tmp
-log "[SUCCESS] Cleanup complete."
 
-log "[COMPLETED] edk2-msm UEFI installed successfully!"
+echo "Done installing edk2-msm UEFI!"
