@@ -1,0 +1,105 @@
+#!/bin/sh
+
+# Define URLs and target paths for binaries
+URL_PAYLOAD_DUMPER="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/payload-dumper-go"
+URL_LPMAKE="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/lpmake"
+URL_LPUNPACK="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/lpunpack"
+
+BIN_DIR="/dev/tmp/auto-installer"
+WORK_DIR="/sdcard/auto-installer"
+PAYLOAD_FILE=$(find /sdcard/ -name "payload.bin" | head -n 1)
+
+mkdir -p "$BIN_DIR"
+mkdir -p "$WORK_DIR"
+
+log() {
+    echo ""
+    echo "[$(date +"%H:%M:%S")] $1"
+}
+
+# Function to download and set permissions
+download_and_set_permissions() {
+    local url=$1 dest_file=$2
+    log "[INFO] Downloading $(basename "$dest_file")..."
+    curl -s -L -o "$dest_file" "$url" || { log "[ERROR] Failed to download $(basename "$dest_file")"; exit 1; }
+    chmod 755 "$dest_file"
+    log "[SUCCESS] $(basename "$dest_file") ready."
+}
+
+# Download required binaries
+download_and_set_permissions "$URL_PAYLOAD_DUMPER" "$BIN_DIR/payload-dumper-go"
+download_and_set_permissions "$URL_LPMAKE" "$BIN_DIR/lpmake"
+download_and_set_permissions "$URL_LPUNPACK" "$BIN_DIR/lpunpack"
+
+log "[INFO] Searching for payload.bin..."
+if [ -z "$PAYLOAD_FILE" ]; then
+    log "[ERROR] No payload.bin found in /sdcard!"
+    exit 1
+fi
+log "[SUCCESS] Found payload.bin: $PAYLOAD_FILE"
+
+log "[INFO] Extracting payload.bin..."
+$BIN_DIR/payload-dumper-go -o "$WORK_DIR" "$PAYLOAD_FILE" || { log "[ERROR] Extraction failed!"; exit 1; }
+log "[SUCCESS] Extraction completed."
+
+log "[INFO] Generating original checksums..."
+for img in system vendor odm system_ext product; do
+    mv "$WORK_DIR/${img}.img" "$WORK_DIR/${img}_a.img"
+done
+sha256sum "$WORK_DIR/system_a.img" "$WORK_DIR/vendor_a.img" "$WORK_DIR/odm_a.img" "$WORK_DIR/system_ext_a.img" "$WORK_DIR/product_a.img" > "$WORK_DIR/original_checksums.txt"
+log "[SUCCESS] Checksums generated."
+
+log "[INFO] Calculating total partition size with buffer..."
+TOTAL_SIZE=$(du -b "$WORK_DIR/system_a.img" "$WORK_DIR/vendor_a.img" "$WORK_DIR/odm_a.img" "$WORK_DIR/system_ext_a.img" "$WORK_DIR/product_a.img" | awk '{sum += $1} END {print sum + (100 * 1024 * 1024); exit}')
+echo "Total size (with buffer): $TOTAL_SIZE"
+
+log "[INFO] Creating super.img..."
+$BIN_DIR/lpmake \
+--metadata-size 65536 \
+--metadata-slots 3 \
+--device super:9126805504 \
+--super-name super \
+--group super_group_a:9126805504 \
+--group super_group_b:9126805504 \
+--partition odm_a:readonly:$(wc -c <"$WORK_DIR/odm_a.img"):super_group_a --image odm_a="$WORK_DIR/odm_a.img" \
+--partition odm_b:readonly:0:super_group_b \
+--partition product_a:readonly:$(wc -c <"$WORK_DIR/product_a.img"):super_group_a --image product_a="$WORK_DIR/product_a.img" \
+--partition product_b:readonly:0:super_group_b \
+--partition system_a:readonly:$(wc -c <"$WORK_DIR/system_a.img"):super_group_a --image system_a="$WORK_DIR/system_a.img" \
+--partition system_b:readonly:0:super_group_b \
+--partition system_ext_a:readonly:$(wc -c <"$WORK_DIR/system_ext_a.img"):super_group_a --image system_ext_a="$WORK_DIR/system_ext_a.img" \
+--partition system_ext_b:readonly:0:super_group_b \
+--partition vendor_a:readonly:$(wc -c <"$WORK_DIR/vendor_a.img"):super_group_a --image vendor_a="$WORK_DIR/vendor_a.img" \
+--partition vendor_b:readonly:0:super_group_b \
+--virtual-ab \
+--output "$WORK_DIR/super.img"
+
+log "[SUCCESS] super.img created."
+
+log "[INFO] Truncating super.img..."
+truncate -s "$TOTAL_SIZE" "$WORK_DIR/super.img"
+log "[SUCCESS] Truncation complete."
+
+log "[INFO] Extracting super.img..."
+mkdir -p "$WORK_DIR/super_extracted"
+$BIN_DIR/lpunpack "$WORK_DIR/super.img" "$WORK_DIR/super_extracted" || { log "[ERROR] Extraction failed!"; exit 1; }
+log "[SUCCESS] super.img extracted."
+
+log "[INFO] Generating new checksums..."
+sha256sum "$WORK_DIR/super_extracted/system_a.img" "$WORK_DIR/super_extracted/vendor_a.img" "$WORK_DIR/super_extracted/odm_a.img" "$WORK_DIR/super_extracted/system_ext_a.img" "$WORK_DIR/super_extracted/product_a.img" > "$WORK_DIR/new_checksums.txt"
+log "[SUCCESS] Checksums generated."
+
+log "[INFO] Normalizing checksums for comparison..."
+sed -E 's|(_a)?\.img|.img|' "$WORK_DIR/original_checksums.txt" | sed -E 's|/sdcard/auto-installer|/tmp|' > "$WORK_DIR/original_checksums_norm.txt"
+sed -E 's|(_a)?\.img|.img|' "$WORK_DIR/new_checksums.txt" | sed -E 's|/sdcard/auto-installer/super_extracted|/tmp|' > "$WORK_DIR/new_checksums_norm.txt"
+
+log "[INFO] Comparing checksums..."
+diff "$WORK_DIR/original_checksums_norm.txt" "$WORK_DIR/new_checksums_norm.txt" || log "[WARNING] Checksum mismatch detected!"
+log "[SUCCESS] Checksum comparison complete."
+
+log "[INFO] Cleaning up..."
+rm -rf "$WORK_DIR/super_extracted"
+rm -f "$WORK_DIR/system_a.img" "$WORK_DIR/vendor_a.img" "$WORK_DIR/odm_a.img" "$WORK_DIR/system_ext_a.img" "$WORK_DIR/product_a.img" "$WORK_DIR/original_checksums.txt" "$WORK_DIR/new_checksums.txt" "$WORK_DIR/original_checksums_norm.txt" "$WORK_DIR/new_checksums_norm.txt" 
+log "[SUCCESS] Cleanup complete."
+
+log "[COMPLETED] Auto-installer process finished successfully!"
