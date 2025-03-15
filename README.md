@@ -12,5 +12,5 @@ su -c "cd / && mkdir -p /dev/tmp && cd /dev/tmp && curl -sSL -o win_uefi https:/
 for making auto-installer ready files from aosp payload.bin
 
 ```bash
-su -c "cd / && mkdir -p /dev/tmp && cd /dev/tmp && curl -sSL -o auto-installer https://raw.githubusercontent.com/SirTorius-M/test/main/auto-installer && chmod 777 auto-installer && su -c ./auto-installer"
+su -c "cd / && mkdir -p /dev/tmp && cd /dev/tmp && curl -sSL -o auto_installer https://raw.githubusercontent.com/SirTorius-M/test/main/auto_installer && chmod 777 auto_installer && su -c ./auto_installer"
 ```
