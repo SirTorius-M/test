@@ -50,7 +50,7 @@ sha256sum "$WORK_DIR/system_a.img" "$WORK_DIR/vendor_a.img" "$WORK_DIR/odm_a.img
 log "[SUCCESS] Checksums generated."
 
 log "[INFO] Calculating total partition size with buffer..."
-TOTAL_SIZE=$(du -b "$WORK_DIR/system_a.img" "$WORK_DIR/vendor_a.img" "$WORK_DIR/odm_a.img" "$WORK_DIR/system_ext_a.img" "$WORK_DIR/product_a.img" | awk '{sum += $1} END {print sum + (100 * 1024 * 1024); exit}')
+TOTAL_SIZE=$(du -b "$WORK_DIR/system_a.img" "$WORK_DIR/vendor_a.img" "$WORK_DIR/odm_a.img" "$WORK_DIR/system_ext_a.img" "$WORK_DIR/product_a.img" | awk '{sum += $1} END {print sum + (50 * 1024 * 1024); exit}')
 echo "Total size (with buffer): $TOTAL_SIZE"
 
 log "[INFO] Creating super.img..."
