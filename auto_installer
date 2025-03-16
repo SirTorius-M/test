@@ -1,13 +1,13 @@
 #!/bin/sh
 
 # Define URLs and target paths for binaries
+URL_BUSYBOX="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/busybox"
 URL_PAYLOAD_DUMPER="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/payload-dumper-go"
 URL_LPMAKE="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/lpmake"
 URL_LPUNPACK="https://raw.githubusercontent.com/SirTorius-M/test/main/bin/lpunpack"
 
 BIN_DIR="/dev/tmp/auto-installer"
 WORK_DIR="/sdcard/auto-installer"
-PAYLOAD_FILE=$(find /sdcard/ -name "payload.bin" | head -n 1)
 
 mkdir -p "$BIN_DIR"
 mkdir -p "$WORK_DIR"
@@ -27,30 +27,104 @@ download_and_set_permissions() {
 }
 
 # Download required binaries
+download_and_set_permissions "$URL_BUSYBOX" "$BIN_DIR/busybox"
 download_and_set_permissions "$URL_PAYLOAD_DUMPER" "$BIN_DIR/payload-dumper-go"
 download_and_set_permissions "$URL_LPMAKE" "$BIN_DIR/lpmake"
 download_and_set_permissions "$URL_LPUNPACK" "$BIN_DIR/lpunpack"
 
-log "[INFO] Searching for payload.bin..."
-if [ -z "$PAYLOAD_FILE" ]; then
-    log "[ERROR] No payload.bin found in /sdcard!"
+
+echo ""
+echo "Searching for AOSP ROM RECOVERY ZIP files containing payload.bin..."
+
+# Initialize variables
+count=1
+files=()  # Array to store valid file paths
+temp_file="$BIN_DIR/zip_list.txt"  # Temporary file in the current working directory
+
+# Use find to search for ZIP files while excluding "Android" and hidden folders
+$BIN_DIR/busybox find "/sdcard/" \
+    -type d \( -name "Android" -o -name ".*" \) -prune -o \
+    -type f -name "*.zip" -print > "$temp_file"
+
+# Read the find results line by line
+while IFS= read -r file; do
+    if [ -f "$file" ]; then
+        # Check if the ZIP contains payload.bin
+        if $BIN_DIR/busybox unzip -l "$file" | $BIN_DIR/busybox grep -q "payload.bin"; then
+            echo "$count. $(basename "$file")"  # Print only the filename
+            files[$count]="$file"  # Store the full file path
+            count=$((count + 1))
+        fi
+    fi
+done < "$temp_file"
+
+# Clean up the temporary file
+rm -f "$temp_file"
+
+# Check if no valid ZIP files were found
+if [ "$count" -eq 1 ]; then
+    echo "No valid AOSP ROM ZIP files found (must contain payload.bin)."
     exit 1
 fi
-log "[SUCCESS] Found payload.bin: $PAYLOAD_FILE"
+
+# Automatically select the ZIP file if only one is available
+if [ "$count" -eq 2 ]; then
+    SELECTED_ZIP_FILE="${files[1]}"
+    echo ""
+	echo "Only one valid ZIP file found: $(basename "$SELECTED_ZIP_FILE")"
+    echo "Automatically selecting this file."
+else
+    # Prompt user for selection if multiple valid ZIPs are found
+    echo ""
+    echo "Enter the serial number of the ZIP file to select:"
+    read -r selection
+
+    # Validate ZIP file selection
+    if [ -z "${files[$selection]}" ]; then
+        echo "Invalid selection. Exiting."
+        exit 1
+    fi
+
+    SELECTED_ZIP_FILE="${files[$selection]}"
+fi
+
+# Extract the filename (without extension) from the selected ZIP file
+ZIP_NAME=$($BIN_DIR/busybox basename "$SELECTED_ZIP_FILE" .zip)
+TARGET_DIR="$WORK_DIR/${ZIP_NAME}_FASTBOOT_RECOVERY"
+
+# Create the directory
+$BIN_DIR/busybox mkdir -p "$TARGET_DIR"
+
+# Unzip only the payload.bin file into the created directory
+echo ""
+echo "Extracting payload.bin"
+$BIN_DIR/busybox unzip -o "$SELECTED_ZIP_FILE" "payload.bin" -d "$TARGET_DIR"
+
+# Check if extraction was successful
+if [ ! -f "$TARGET_DIR/payload.bin" ]; then
+    echo "[ERROR] payload.bin not found in the selected ZIP. Exiting."
+    exit 1
+fi
+
+# Store the extracted payload.bin path in $PAYLOAD_FILE
+PAYLOAD_FILE="$TARGET_DIR/payload.bin"
+
+echo "payload.bin extraction complete."
 
 log "[INFO] Extracting payload.bin..."
-$BIN_DIR/payload-dumper-go -o "$WORK_DIR" "$PAYLOAD_FILE" || { log "[ERROR] Extraction failed!"; exit 1; }
+echo " "
+$BIN_DIR/payload-dumper-go -o "$TARGET_DIR" "$PAYLOAD_FILE" || { log "[ERROR] Extraction failed!"; exit 1; }
 log "[SUCCESS] Extraction completed."
 
 log "[INFO] Generating original checksums..."
 for img in system vendor odm system_ext product; do
-    mv "$WORK_DIR/${img}.img" "$WORK_DIR/${img}_a.img"
+    $BIN_DIR/busybox mv "$TARGET_DIR/${img}.img" "$TARGET_DIR/${img}_a.img"
 done
-sha256sum "$WORK_DIR/system_a.img" "$WORK_DIR/vendor_a.img" "$WORK_DIR/odm_a.img" "$WORK_DIR/system_ext_a.img" "$WORK_DIR/product_a.img" > "$WORK_DIR/original_checksums.txt"
+$BIN_DIR/busybox sha256sum "$TARGET_DIR/system_a.img" "$TARGET_DIR/vendor_a.img" "$TARGET_DIR/odm_a.img" "$TARGET_DIR/system_ext_a.img" "$TARGET_DIR/product_a.img" > "$TARGET_DIR/original_checksums.txt"
 log "[SUCCESS] Checksums generated."
 
 log "[INFO] Calculating total partition size with buffer..."
-TOTAL_SIZE=$(du -b "$WORK_DIR/system_a.img" "$WORK_DIR/vendor_a.img" "$WORK_DIR/odm_a.img" "$WORK_DIR/system_ext_a.img" "$WORK_DIR/product_a.img" | awk '{sum += $1} END {print sum + (50 * 1024 * 1024); exit}')
+TOTAL_SIZE=$($BIN_DIR/busybox du -b "$TARGET_DIR/system_a.img" "$TARGET_DIR/vendor_a.img" "$TARGET_DIR/odm_a.img" "$TARGET_DIR/system_ext_a.img" "$TARGET_DIR/product_a.img" | $BIN_DIR/busybox awk '{sum += $1} END {print sum + (24 * 1024 * 1024); exit}')
 echo "Total size (with buffer): $TOTAL_SIZE"
 
 log "[INFO] Creating super.img..."
@@ -61,45 +135,61 @@ $BIN_DIR/lpmake \
 --super-name super \
 --group super_group_a:9126805504 \
 --group super_group_b:9126805504 \
---partition odm_a:readonly:$(wc -c <"$WORK_DIR/odm_a.img"):super_group_a --image odm_a="$WORK_DIR/odm_a.img" \
+--partition odm_a:readonly:$(wc -c <"$TARGET_DIR/odm_a.img"):super_group_a --image odm_a="$TARGET_DIR/odm_a.img" \
 --partition odm_b:readonly:0:super_group_b \
---partition product_a:readonly:$(wc -c <"$WORK_DIR/product_a.img"):super_group_a --image product_a="$WORK_DIR/product_a.img" \
+--partition product_a:readonly:$(wc -c <"$TARGET_DIR/product_a.img"):super_group_a --image product_a="$TARGET_DIR/product_a.img" \
 --partition product_b:readonly:0:super_group_b \
---partition system_a:readonly:$(wc -c <"$WORK_DIR/system_a.img"):super_group_a --image system_a="$WORK_DIR/system_a.img" \
+--partition system_a:readonly:$(wc -c <"$TARGET_DIR/system_a.img"):super_group_a --image system_a="$TARGET_DIR/system_a.img" \
 --partition system_b:readonly:0:super_group_b \
---partition system_ext_a:readonly:$(wc -c <"$WORK_DIR/system_ext_a.img"):super_group_a --image system_ext_a="$WORK_DIR/system_ext_a.img" \
+--partition system_ext_a:readonly:$(wc -c <"$TARGET_DIR/system_ext_a.img"):super_group_a --image system_ext_a="$TARGET_DIR/system_ext_a.img" \
 --partition system_ext_b:readonly:0:super_group_b \
---partition vendor_a:readonly:$(wc -c <"$WORK_DIR/vendor_a.img"):super_group_a --image vendor_a="$WORK_DIR/vendor_a.img" \
+--partition vendor_a:readonly:$(wc -c <"$TARGET_DIR/vendor_a.img"):super_group_a --image vendor_a="$TARGET_DIR/vendor_a.img" \
 --partition vendor_b:readonly:0:super_group_b \
 --virtual-ab \
---output "$WORK_DIR/super.img"
+--output "$TARGET_DIR/super.img"
 
 log "[SUCCESS] super.img created."
 
 log "[INFO] Truncating super.img..."
-truncate -s "$TOTAL_SIZE" "$WORK_DIR/super.img"
+$BIN_DIR/busybox truncate -s "$TOTAL_SIZE" "$TARGET_DIR/super.img"
 log "[SUCCESS] Truncation complete."
 
 log "[INFO] Extracting super.img..."
-mkdir -p "$WORK_DIR/super_extracted"
-$BIN_DIR/lpunpack "$WORK_DIR/super.img" "$WORK_DIR/super_extracted" || { log "[ERROR] Extraction failed!"; exit 1; }
+$BIN_DIR/busybox mkdir -p "$TARGET_DIR/super_extracted"
+$BIN_DIR/lpunpack "$TARGET_DIR/super.img" "$TARGET_DIR/super_extracted" || { log "[ERROR] Extraction failed!"; exit 1; }
 log "[SUCCESS] super.img extracted."
 
 log "[INFO] Generating new checksums..."
-sha256sum "$WORK_DIR/super_extracted/system_a.img" "$WORK_DIR/super_extracted/vendor_a.img" "$WORK_DIR/super_extracted/odm_a.img" "$WORK_DIR/super_extracted/system_ext_a.img" "$WORK_DIR/super_extracted/product_a.img" > "$WORK_DIR/new_checksums.txt"
+$BIN_DIR/busybox sha256sum "$TARGET_DIR/super_extracted/system_a.img" "$TARGET_DIR/super_extracted/vendor_a.img" "$TARGET_DIR/super_extracted/odm_a.img" "$TARGET_DIR/super_extracted/system_ext_a.img" "$TARGET_DIR/super_extracted/product_a.img" > "$TARGET_DIR/new_checksums.txt"
 log "[SUCCESS] Checksums generated."
 
 log "[INFO] Normalizing checksums for comparison..."
-sed -E 's|(_a)?\.img|.img|' "$WORK_DIR/original_checksums.txt" | sed -E 's|/sdcard/auto-installer|/tmp|' > "$WORK_DIR/original_checksums_norm.txt"
-sed -E 's|(_a)?\.img|.img|' "$WORK_DIR/new_checksums.txt" | sed -E 's|/sdcard/auto-installer/super_extracted|/tmp|' > "$WORK_DIR/new_checksums_norm.txt"
+$BIN_DIR/busybox sed -E 's|(_a)?\.img|.img|' "$TARGET_DIR/original_checksums.txt" | $BIN_DIR/busybox sed -E 's|$TARGET_DIR|/tmp|' > "$TARGET_DIR/original_checksums_norm.txt"
+$BIN_DIR/busybox sed -E 's|(_a)?\.img|.img|' "$TARGET_DIR/new_checksums.txt" | $BIN_DIR/busybox sed -E 's|$TARGET_DIR/super_extracted|/tmp|' > "$TARGET_DIR/new_checksums_norm.txt"
 
 log "[INFO] Comparing checksums..."
-diff "$WORK_DIR/original_checksums_norm.txt" "$WORK_DIR/new_checksums_norm.txt" || log "[WARNING] Checksum mismatch detected!"
+$BIN_DIR/busybox diff "$TARGET_DIR/original_checksums_norm.txt" "$TARGET_DIR/new_checksums_norm.txt" || log "[WARNING] Checksum mismatch detected!"
 log "[SUCCESS] Checksum comparison complete."
 
+log "[COMPLETED] super.img prepared to use in fastboot/recovery!"
+
+log "[INFO] Now will contrust folder/files as required for auto-installer!"
+$BIN_DIR/busybox mkdir -p "$TARGET_DIR/images" 
+$BIN_DIR/busybox mkdir -p "$TARGET_DIR/META-INF/com/google/android" 
+$BIN_DIR/busybox mkdir -p "$TARGET_DIR/META-INF/com/arkt" 
+$BIN_DIR/busybox mkdir -p "$TARGET_DIR/bin/windows/platform-tools"
+$BIN_DIR/busybox mkdir -p "$TARGET_DIR/bin/windows/log-tool" 
+$BIN_DIR/busybox mkdir -p "$TARGET_DIR/bin/linux/platform-tools" 
+$BIN_DIR/busybox mkdir -p "$TARGET_DIR/ROOT_APK_INSATLL_THIS_ONLY"
+for img in boot dtbo vendor_boot vbmeta vbmeta_system super; do
+    $BIN_DIR/busybox mv "$TARGET_DIR/${img}.img" "$TARGET_DIR/images/${img}.img"
+done
+
 log "[INFO] Cleaning up..."
-rm -rf "$WORK_DIR/super_extracted"
-rm -f "$WORK_DIR/system_a.img" "$WORK_DIR/vendor_a.img" "$WORK_DIR/odm_a.img" "$WORK_DIR/system_ext_a.img" "$WORK_DIR/product_a.img" "$WORK_DIR/original_checksums.txt" "$WORK_DIR/new_checksums.txt" "$WORK_DIR/original_checksums_norm.txt" "$WORK_DIR/new_checksums_norm.txt" 
+$BIN_DIR/busybox rm -rf "$TARGET_DIR/super_extracted"
+$BIN_DIR/busybox rm -f "$TARGET_DIR/system_a.img" "$TARGET_DIR/vendor_a.img" "$TARGET_DIR/odm_a.img" "$TARGET_DIR/system_ext_a.img" "$TARGET_DIR/product_a.img" "$TARGET_DIR/original_checksums.txt" "$TARGET_DIR/new_checksums.txt" "$TARGET_DIR/original_checksums_norm.txt" "$TARGET_DIR/new_checksums_norm.txt" 
+cd
+rm -rf $BIN_DIR
 log "[SUCCESS] Cleanup complete."
 
 log "[COMPLETED] Auto-installer process finished successfully!"
