@@ -35,7 +35,7 @@ download_and_set_permissions "$URL_LPUNPACK" "$BIN_DIR/lpunpack"
 
 echo ""
 echo "Searching for AOSP ROM RECOVERY ZIP files containing payload.bin..."
-
+echo ""
 # Initialize variables
 count=1
 files=()  # Array to store valid file paths
@@ -131,6 +131,7 @@ TOTAL_SIZE=$($BIN_DIR/busybox du -b "$TARGET_DIR/system_a.img" "$TARGET_DIR/vend
 echo "Total size (with buffer): $TOTAL_SIZE"
 
 log "[INFO] Creating super.img..."
+echo ""
 $BIN_DIR/lpmake \
 --metadata-size 65536 \
 --metadata-slots 3 \
