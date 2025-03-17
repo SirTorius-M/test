@@ -58,6 +58,20 @@ while IFS= read -r file; do
     fi
 done < "$temp_file"
 
+while IFS= read -r file; do
+    if [ -f "$file" ]; then
+        # Check if the ZIP contains payload.bin
+        if $BIN_DIR/busybox unzip -l "$file" | $BIN_DIR/busybox grep -q "payload.bin"; then
+            RELATIVE_PATH=${file#/sdcard/}  # Remove /sdcard/ from the path
+            echo "$count. $RELATIVE_PATH"  # Print relative path instead of just filename
+          # echo "$count. $(basename "$file")"  # Print only the filename
+            files[$count]="$file"  # Store the full file path
+            count=$((count + 1))
+        fi
+    fi
+done < "$temp_file"
+
+
 # Clean up the temporary file
 rm -f "$temp_file"
 
