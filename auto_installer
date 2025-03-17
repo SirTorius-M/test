@@ -190,7 +190,7 @@ done
 
 log "[INFO] Cleaning up..."
 $BIN_DIR/busybox rm -rf "$TARGET_DIR/super_extracted"
-$BIN_DIR/busybox rm -f "$TARGET_DIR/system_a.img" "$TARGET_DIR/vendor_a.img" "$TARGET_DIR/odm_a.img" "$TARGET_DIR/system_ext_a.img" "$TARGET_DIR/product_a.img" "$TARGET_DIR/original_checksums.txt" "$TARGET_DIR/new_checksums.txt" "$TARGET_DIR/original_checksums_norm.txt" "$TARGET_DIR/new_checksums_norm.txt" 
+$BIN_DIR/busybox rm -f "$TARGET_DIR/system_a.img" "$TARGET_DIR/vendor_a.img" "$TARGET_DIR/odm_a.img" "$TARGET_DIR/system_ext_a.img" "$TARGET_DIR/product_a.img" "$TARGET_DIR/original_checksums.txt" "$TARGET_DIR/new_checksums.txt" "$TARGET_DIR/original_checksums_norm.txt" "$TARGET_DIR/new_checksums_norm.txt" "$PAYLOAD_FILE" 
 cd
 rm -rf $BIN_DIR
 log "[SUCCESS] Cleanup complete."
