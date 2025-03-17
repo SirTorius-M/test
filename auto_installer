@@ -99,7 +99,7 @@ TARGET_DIR="$WORK_DIR/${ZIP_NAME}_FASTBOOT_RECOVERY"
 $BIN_DIR/busybox mkdir -p "$TARGET_DIR"
 
 # Unzip only the payload.bin file into the created directory
-echo ""
+echo " "
 echo "Extracting payload.bin"
 $BIN_DIR/busybox unzip -o "$SELECTED_ZIP_FILE" "payload.bin" -d "$TARGET_DIR"
 
