@@ -164,10 +164,8 @@ $BIN_DIR/busybox sha256sum "$TARGET_DIR/super_extracted/system_a.img" "$TARGET_D
 log "[SUCCESS] Checksums generated."
 
 log "[INFO] Normalizing checksums for comparison..."
-$BIN_DIR/busybox sed -E "s|(_a)?\.img|.img|" "$TARGET_DIR/original_checksums.txt" | \
-$BIN_DIR/busybox sed -E "s|$TARGET_DIR|/tmp|" > "$TARGET_DIR/original_checksums_norm.txt"
-$BIN_DIR/busybox sed -E "s|(_a)?\.img|.img|" "$TARGET_DIR/new_checksums.txt" | \
-$BIN_DIR/busybox sed -E "s|$TARGET_DIR/super_extracted|/tmp|" > "$TARGET_DIR/new_checksums_norm.txt"
+$BIN_DIR/busybox sed -E "s|(_a)?\.img|.img|" "$TARGET_DIR/original_checksums.txt" | $BIN_DIR/busybox sed -E "s|$TARGET_DIR|/tmp|" > "$TARGET_DIR/original_checksums_norm.txt"
+$BIN_DIR/busybox sed -E "s|(_a)?\.img|.img|" "$TARGET_DIR/new_checksums.txt" | $BIN_DIR/busybox sed -E "s|$TARGET_DIR/super_extracted|/tmp|" > "$TARGET_DIR/new_checksums_norm.txt"
 
 log "[INFO] Comparing checksums..."
 $BIN_DIR/busybox diff "$TARGET_DIR/original_checksums_norm.txt" "$TARGET_DIR/new_checksums_norm.txt" || log "[WARNING] Checksum mismatch detected!"
